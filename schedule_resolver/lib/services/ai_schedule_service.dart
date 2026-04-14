@@ -5,29 +5,31 @@ import 'package:google_generative_ai/google_generative_ai.dart';
 import '../models/task_model.dart';
 import '../models/schedule_analysis.dart';
 
-
 class AiScheduleService extends ChangeNotifier {
   ScheduleAnalysis? _currentAnalysis;
   bool _isLoading = false;
   String? _errorMessage;
 
-  final String _apiKey = '';
+  final String _apiKey = const String.fromEnvironment(
+    'GEMINI_API_KEY',
+    defaultValue: '',
+  );
 
- ScheduleAnalysis? get currentAnalysis => _currentAnalysis;
+  ScheduleAnalysis? get currentAnalysis => _currentAnalysis;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
 
- Future<void> analyzeSchedule(List<TaskModel> tasks) async {
-   if (_apiKey.isEmpty || tasks.isEmpty) return;
-   _isLoading = true;
-   _errorMessage = null;
-   notifyListeners();
+  Future<bool> analyzeSchedule(List<TaskModel> tasks) async {
+    if (_apiKey.isEmpty || tasks.isEmpty) return false;
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
 
-   try {
-     final model = GenerativeModel(model: 'gemini-2.5-flash', apiKey: _apiKey);
-     final tasksJson = jsonEncode(tasks.map((t) => t.toJson()).toList());
-     final prompt =
-     '''
+    try {
+      final model = GenerativeModel(model: 'gemini-2.5-flash', apiKey: _apiKey);
+      final tasksJson = jsonEncode(tasks.map((t) => t.toJson()).toList());
+      final prompt =
+          '''
      
      You are an expert student scheduling assistant. The user has provided the following tasks for their day in JSON format: $tasksJson
      
@@ -48,49 +50,50 @@ class AiScheduleService extends ChangeNotifier {
      Ensure the markdown is well formatted and easy to read. Do not include extra text outside of these headers.       
      ''';
 
-     final content = [Content.text(prompt)];
-     final response = await model.generateContent(content);
+      final content = [Content.text(prompt)];
+      final response = await model.generateContent(content);
 
-     // final text = response.text ?? '';
-     // final analysis = _parseResponse(text);
-     // _currentAnalysis = analysis;
+      // final text = response.text ?? '';
+      // final analysis = _parseResponse(text);
+      // _currentAnalysis = analysis;
 
-     _currentAnalysis = _parseResponse(response.text ?? ''); //combining the 3
-
-   } catch (e) {
-     _errorMessage = "Failed to analyze schedule: $e";
-   } finally {
-     _isLoading = false;
-     notifyListeners();
-   }
- }
-
-
- ScheduleAnalysis _parseResponse(String fulltext) {
-   String conflicts = "", rankedTask = "", recommendedSchedule = "", explanation = "";
-
-   final sections = fulltext.split('### ');
-   for (var section in sections) {
-     if (section.startsWith('Detected Conflicts')) {
-       conflicts = section.replaceFirst('Detected Conflicts', '').trim();
-
-     } else if (section.startsWith('Ranked Tasks')) {
-       rankedTask = section.replaceFirst('Ranked Tasks', '').trim();
-
-     } else if (section.startsWith('Recommended Schedule')) {
-       recommendedSchedule = section.replaceFirst('Recommended Schedule', '').trim();
-
-     } else if (section.startsWith('Explanation')) {
-       explanation = section.replaceFirst('Explanation', '').trim();
-     }
-   }
-
-   return ScheduleAnalysis(
-       conflicts: conflicts,
-       rankedTask: rankedTask,
-       recommendedSchedule: recommendedSchedule,
-       explanation: explanation
-   );
+      _currentAnalysis = _parseResponse(response.text ?? ''); //combining the 3
+      return _currentAnalysis != null;
+    } catch (e) {
+      _errorMessage = "Failed to analyze schedule: $e";
+      return false;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
   }
 
+  ScheduleAnalysis _parseResponse(String fulltext) {
+    String conflicts = "",
+        rankedTask = "",
+        recommendedSchedule = "",
+        explanation = "";
+
+    final sections = fulltext.split('### ');
+    for (var section in sections) {
+      if (section.startsWith('Detected Conflicts')) {
+        conflicts = section.replaceFirst('Detected Conflicts', '').trim();
+      } else if (section.startsWith('Ranked Tasks')) {
+        rankedTask = section.replaceFirst('Ranked Tasks', '').trim();
+      } else if (section.startsWith('Recommended Schedule')) {
+        recommendedSchedule = section
+            .replaceFirst('Recommended Schedule', '')
+            .trim();
+      } else if (section.startsWith('Explanation')) {
+        explanation = section.replaceFirst('Explanation', '').trim();
+      }
+    }
+
+    return ScheduleAnalysis(
+      conflicts: conflicts,
+      rankedTask: rankedTask,
+      recommendedSchedule: recommendedSchedule,
+      explanation: explanation,
+    );
+  }
 }
